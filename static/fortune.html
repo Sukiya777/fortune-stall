@@ -727,8 +727,9 @@ async function openSession(id){
     let h=esc(d.face||'');
     if(d.seal)h+='<div class="sealft">落款 · '+esc(d.seal)+'</div>';
     h+='<div class="verd"><div class="vl">断 语 存 档</div>'+
-      '<textarea id="verdIn" style="margin-top:4px" placeholder="把 AI 或你自己的断语记在这里…"></textarea>'+
-      '<button class="act gold" style="display:block;width:100%;margin-top:10px" onclick="saveVerdict('+d.id+')">存 断 语</button></div>';
+  '<textarea id="verdIn" style="margin-top:4px" placeholder="把 AI 或你自己的断语记在这里…"></textarea>'+
+  '<button class="act gold" style="display:block;width:100%;margin-top:10px" onclick="saveVerdict('+d.id+')">存 断 语</button>'+
+  '<button class="act" style="display:block;width:100%;margin-top:8px;border-color:var(--gold-line);color:var(--lantern)" onclick="aiVerdict('+d.id+')">AI 断 卦</button></div>';
     $('ssBody').innerHTML=h;
     $('verdIn').value=d.verdict||'';
     $('sheetMask').classList.add('on');$('sessionSheet').classList.add('on');
@@ -742,6 +743,23 @@ async function saveVerdict(id){
     const d=await r.json();if(!r.ok)throw Error(d.detail||'存不上');
     toast(v?'断语已记档':'断语已清空');loadLedger();
   }catch(e){toast(e.message);}}
+   async function aiVerdict(id){
+  if(!confirm('确定调用 AI 断卦局 #'+id+' 吗？')) return;
+  toast('AI 正在断卦，请稍候…');
+  try{
+    const r = await api('/api/fortune/ai_verdict', {
+      method: 'POST',
+      body: JSON.stringify({id: id, auto_save: true})
+    });
+    const d = await r.json();
+    if(!r.ok) throw Error(d.detail || 'AI 断卦失败');
+    $('verdIn').value = d.verdict || '';
+    toast('AI 断卦完成，已自动存档');
+    loadLedger();
+  }catch(e){
+    toast(e.message || 'AI 断卦失败');
+  }
+}
 
 /* ════════════════════ 启动 ════════════════════ */
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
