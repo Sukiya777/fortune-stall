@@ -235,3 +235,96 @@ def register(app, require_auth):
             if cur.rowcount == 0:
                 raise HTTPException(404, "no such session")
         return {"ok": True, "id": sid}
+    @app.post("/api/fortune/ai_verdict", dependencies=[Depends(require_auth)])
+    async def _f_ai_verdict(req: Request):
+        """根据卦局调用 DeepSeek 断卦，可自动存档"""
+        import httpx
+        b = await req.json()
+        try:
+            sid = int(b.get("id"))
+        except Exception:
+            raise HTTPException(400, "要 id(卦局号)")
+
+        auto_save = bool(b.get("auto_save", True))
+
+        _ensure()
+        with _connect() as c:
+            r = c.execute("SELECT id, question, method, face, seal FROM fortune_sessions WHERE id=?", (sid,)).fetchone()
+        if not r:
+            raise HTTPException(404, "no such session")
+
+        method = r[2] or ""
+        face = r[3] or ""
+        question = r[1] or ""
+
+        # 读取对应技能包 SKILL.md
+        skill_map = {
+            "xiaoliuren": SKILLS_DIR / "xiaoliuren" / "SKILL.md",
+            "liuyao": SKILLS_DIR / "liuyao" / "SKILL.md",
+            "tarot": SKILLS_DIR / "tarot" / "SKILL.md",
+        }
+        skill_path = skill_map.get(method)
+        skill_text = ""
+        if skill_path and skill_path.exists():
+            skill_text = skill_path.read_text(encoding="utf-8")[:12000]
+
+        system_prompt = (
+            "你是一位严谨的传统占卜师。请严格遵循用户提供的技能包工作流进行断卦。"
+            "输出格式要求：\n"
+            "【断】先给出明确结论（1-3句）\n"
+            "【卦理】用白话解释为什么这么断（3-6句）\n"
+            "【建议】给出可执行的建议（可选）\n"
+            "不要编造卦面内容，只根据提供的卦面和技能包断。"
+        )
+
+        user_prompt = f"""请根据以下技能包和卦面进行断卦。
+
+【技能包】
+{skill_text}
+
+【所问之事】
+{question}
+
+【卦面】
+{face}
+"""
+
+        api_key = os.environ.get("AI_API_KEY", "")
+        base_url = os.environ.get("AI_BASE_URL", "https://api.deepseek.com").rstrip("/")
+        model = os.environ.get("AI_MODEL", "deepseek-chat")
+
+        if not api_key:
+            raise HTTPException(500, "服务器未配置 AI_API_KEY")
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{base_url}/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 1500,
+                    },
+                )
+            if resp.status_code != 200:
+                raise HTTPException(502, f"AI 接口返回错误: {resp.status_code} {resp.text[:200]}")
+            data = resp.json()
+            verdict = data["choices"][0]["message"]["content"].strip()
+        except httpx.TimeoutException:
+            raise HTTPException(504, "AI 调用超时，请稍后重试")
+        except Exception as e:
+            raise HTTPException(502, f"调用 AI 失败: {str(e)[:200]}")
+
+        if auto_save and verdict:
+            with _connect() as c:
+                c.execute("UPDATE fortune_sessions SET verdict=? WHERE id=?", (verdict[:4000], sid))
+
+        return {"ok": True, "id": sid, "verdict": verdict}
