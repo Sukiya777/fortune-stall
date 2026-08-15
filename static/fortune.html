@@ -260,7 +260,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   <header class="hero">
     <div class="eyebrow">夜 市 尽 头</div>
     <h1>问心处</h1>
-    <p class="sub">自家夜市的算卦小摊 · <span class="ph">卦面即印章</span></p>
+    <p class="sub">Suki夜市的算卦小摊 · <span class="ph">卦面即印章</span></p>
   </header>
   <div class="stalls">
     <button class="stall" onclick="openCast('xiaoliuren')">
@@ -592,9 +592,12 @@ function onFace(text,extra){
     '<div class="facefold fold" id="faceFold"><div class="lbl">卦 面 全 文</div>'+
     '<div class="txt">'+esc(text)+'</div><div class="foldtip">点开 / 收起</div></div>'+
     '<div class="actrow">'+
-      '<button class="act gold" onclick="copyFace()">复制卦面 · 拿去给 AI 断</button>'+
+      '<button class="act gold" onclick="copyFace()">复制卦面</button>'+
+      '<button class="act" onclick="aiVerdictFromCast()">AI 断 卦</button>'+
       '<button class="act" onclick="resetCast()">再问一事</button>'+
-    '</div></div>');
+    '</div>'+
+    '<div id="aiResultBox" style="display:none;margin:0 14px 14px;padding:12px;border:1px solid var(--gold-line);border-radius:10px;background:rgba(217,164,65,.06);white-space:pre-wrap;line-height:1.75;font-size:13.5px;"></div>'+
+    '</div>');
   box.querySelector('#faceFold').onclick=e=>{e.currentTarget.classList.toggle('fold');};
   $('resultHolder').innerHTML='';$('resultHolder').appendChild(box);
   box.querySelectorAll('.tc-img').forEach(im=>{
@@ -757,6 +760,25 @@ async function saveVerdict(id){
     toast('AI 断卦完成，已自动存档');
     loadLedger();
   }catch(e){
+    toast(e.message || 'AI 断卦失败');
+  }
+   async function aiVerdictFromCast(){
+  if(!lastCast || !lastCast.sid){toast('还没有落印的卦');return;}
+  const box = $('aiResultBox');
+  if(!box) return;
+  box.style.display = 'block';
+  box.textContent = 'AI 正在断卦，请稍候…';
+  try{
+    const r = await api('/api/fortune/ai_verdict', {
+      method: 'POST',
+      body: JSON.stringify({id: parseInt(lastCast.sid), auto_save: true})
+    });
+    const d = await r.json();
+    if(!r.ok) throw Error(d.detail || 'AI 断卦失败');
+    box.textContent = d.verdict || '（无内容）';
+    toast('AI 断卦完成，已自动存档');
+  }catch(e){
+    box.textContent = '断卦失败：' + (e.message || '未知错误');
     toast(e.message || 'AI 断卦失败');
   }
 }
