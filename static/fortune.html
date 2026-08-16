@@ -343,13 +343,16 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 'use strict';
 /* ════════════════════ 基础 ════════════════════ */
 const TOKEN = localStorage.getItem('fortune_token') || '';  /* 服务端未设 FORTUNE_TOKEN 时无需配置 */
+/* 不含姓名、邮箱等个人信息；仅用于把卦账隔离到当前浏览器。 */
+let VISITOR_ID = localStorage.getItem('fortune_visitor_id');
+if(!VISITOR_ID){VISITOR_ID=crypto.randomUUID();localStorage.setItem('fortune_visitor_id',VISITOR_ID);}
 const $ = id => document.getElementById(id);
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const el = h => {const d=document.createElement('div');d.innerHTML=h.trim();return d.firstChild;};
 function toast(t){const x=$('toast');x.textContent=t;x.classList.add('on');
   clearTimeout(x._t);x._t=setTimeout(()=>x.classList.remove('on'),2600);}
 async function api(path,opt={}){
-  const hd={'Content-Type':'application/json',...(opt.headers||{})};
+  const hd={'Content-Type':'application/json','X-Fortune-Visitor':VISITOR_ID,...(opt.headers||{})};
   if(TOKEN)hd.Authorization='Bearer '+TOKEN;
   const r=await fetch(path,{...opt,headers:hd});
   if(r.status===401){$('gate').classList.add('on');throw Error('未登录');}

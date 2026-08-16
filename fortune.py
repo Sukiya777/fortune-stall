@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", ROOT / "skills"))
 DB_PATH = Path(os.environ.get("FORTUNE_DB", ROOT / "data" / "fortune.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 PERSONA = os.environ.get("PERSONA", "摊主")
 _ZHI = "子丑寅卯辰巳午未申酉戌亥"
 
@@ -26,6 +27,10 @@ def _hour_zhi(h):
 
 
 def _connect():
+    """优先使用 PostgreSQL；未设置 DATABASE_URL 时保留 SQLite 方便本地开发。"""
+    if DATABASE_URL:
+        import psycopg
+        return psycopg.connect(DATABASE_URL)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
@@ -34,10 +39,23 @@ def _connect():
 
 def _ensure():
     with _connect() as c:
-        c.execute("CREATE TABLE IF NOT EXISTS fortune_sessions ("
-                  "id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, question TEXT, "
-                  "method TEXT, mode TEXT, args_json TEXT, face TEXT, "
-                  "seal TEXT DEFAULT '', verdict TEXT DEFAULT '', author TEXT DEFAULT '')")
+        if DATABASE_URL:
+            c.execute("CREATE TABLE IF NOT EXISTS fortune_sessions ("
+                      "id BIGSERIAL PRIMARY KEY, created_at TEXT NOT NULL, question TEXT NOT NULL, "
+                      "method TEXT NOT NULL, mode TEXT NOT NULL, args_json TEXT NOT NULL, face TEXT NOT NULL, "
+                      "seal TEXT DEFAULT '', verdict TEXT DEFAULT '', author TEXT DEFAULT '', "
+                      "visitor_id TEXT NOT NULL DEFAULT '')")
+            c.execute("CREATE INDEX IF NOT EXISTS fortune_sessions_visitor_id_idx "
+                      "ON fortune_sessions (visitor_id, id DESC)")
+        else:
+            c.execute("CREATE TABLE IF NOT EXISTS fortune_sessions ("
+                      "id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, question TEXT, "
+                      "method TEXT, mode TEXT, args_json TEXT, face TEXT, "
+                      "seal TEXT DEFAULT '', verdict TEXT DEFAULT '', author TEXT DEFAULT '', "
+                      "visitor_id TEXT NOT NULL DEFAULT '')")
+            columns = {row[1] for row in c.execute("PRAGMA table_info(fortune_sessions)").fetchall()}
+            if "visitor_id" not in columns:
+                c.execute("ALTER TABLE fortune_sessions ADD COLUMN visitor_id TEXT NOT NULL DEFAULT ''")
 
 
 def _seal_line():
@@ -77,7 +95,7 @@ def _run(method, argv):
     return (r.stdout or "").strip()
 
 
-def cast(args):
+def cast(args, visitor_id=""):
     _ensure()
     question = str(args.get("question") or "").strip()
     if not question:
@@ -148,17 +166,23 @@ def cast(args):
     warn = ""
     if day_gz and method == "liuyao" and (day_gz + "日") not in face and day_gz not in face:
         warn = "\n⚠ 脚本内算干支与日历权威(" + day_gz + "日)不符, 断卦以日历为准"
+    values = (now.strftime("%Y-%m-%d %H:%M:%S"), question[:200], method, mode,
+              json.dumps([str(x) for x in argv], ensure_ascii=False), face[:12000], seal, PERSONA, visitor_id)
     with _connect() as c2:
-        cur = c2.execute("INSERT INTO fortune_sessions (created_at,question,method,mode,args_json,face,seal,author)"
-                         " VALUES (?,?,?,?,?,?,?,?)",
-                         (now.strftime("%Y-%m-%d %H:%M:%S"), question[:200], method, mode,
-                          json.dumps([str(x) for x in argv], ensure_ascii=False), face[:12000], seal, PERSONA))
-        sid = cur.lastrowid
+        if DATABASE_URL:
+            sid = c2.execute("INSERT INTO fortune_sessions "
+                             "(created_at,question,method,mode,args_json,face,seal,author,visitor_id) "
+                             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", values).fetchone()[0]
+        else:
+            cur = c2.execute("INSERT INTO fortune_sessions "
+                             "(created_at,question,method,mode,args_json,face,seal,author,visitor_id) "
+                             "VALUES (?,?,?,?,?,?,?,?,?)", values)
+            sid = cur.lastrowid
     return ("🎐 卦局 #" + str(sid) + " 已落印 · " + seal + "\n问: " + question + "\n" + "─" * 24 + "\n"
             + face + warn + "\n" + "─" * 24 + "\n卦面为服务端印章, 只断不改。")
 
 
-def roll(kind, question, gender=""):
+def roll(kind, question, gender="", visitor_id=""):
     """摊位随机起法: dice=三枚骰子走小六壬, coin=三枚铜钱摇六次走六爻。服务端摇, 落地即锁。"""
     import random
     if not str(question or "").strip():
@@ -166,7 +190,7 @@ def roll(kind, question, gender=""):
     if kind == "dice":
         pips = [random.randint(1, 6) for _ in range(3)]
         out = cast({"question": question, "method": "xiaoliuren", "mode": "numbers",
-                    "a": pips[0], "b": pips[1], "c": pips[2], "gender": gender})
+                    "a": pips[0], "b": pips[1], "c": pips[2], "gender": gender}, visitor_id)
         return {"kind": "dice", "pips": pips, "text": out}
     if kind == "coin":
         tosses, yaos = [], []
@@ -175,54 +199,69 @@ def roll(kind, question, gender=""):
             tosses.append(backs)
             yaos.append({3: 9, 2: 8, 1: 7, 0: 6}[backs])
         out = cast({"question": question, "method": "liuyao", "mode": "yao",
-                    "yaos": " ".join(str(y) for y in yaos)})
+                    "yaos": " ".join(str(y) for y in yaos)}, visitor_id)
         return {"kind": "coin", "tosses": tosses, "yaos": yaos, "text": out}
     raise ValueError("摊位摇法只有 dice(骰子) 和 coin(铜钱)")
 
 
 def register(app, require_auth):
     """把问心处 API 挂到任意 FastAPI 应用上。require_auth 为 FastAPI 依赖(可为空实现)。"""
-    from fastapi import Depends, HTTPException, Request
+    from fastapi import Depends, HTTPException, Request, Header
     _ensure()
 
+    def require_visitor(x_fortune_visitor: str = Header(default="")) -> str:
+        """浏览器本地生成的匿名 UUID；只用来隔离不同访客的卦账。"""
+        visitor = x_fortune_visitor.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", visitor):
+            raise HTTPException(400, "缺少或无效的访客标识，请刷新页面后重试")
+        return visitor
+
     @app.post("/api/fortune/roll", dependencies=[Depends(require_auth)])
-    async def _f_roll(req: Request):
+    async def _f_roll(req: Request, visitor: str = Depends(require_visitor)):
         b = await req.json()
         try:
-            return roll(str(b.get("kind") or ""), b.get("question") or "", b.get("gender") or "")
+            return roll(str(b.get("kind") or ""), b.get("question") or "", b.get("gender") or "", visitor)
         except Exception as e:
             raise HTTPException(400, str(e))
 
     @app.post("/api/fortune/cast", dependencies=[Depends(require_auth)])
-    async def _f_cast(req: Request):
+    async def _f_cast(req: Request, visitor: str = Depends(require_visitor)):
         b = await req.json()
         try:
-            return {"text": cast(b)}
+            return {"text": cast(b, visitor)}
         except Exception as e:
             raise HTTPException(400, str(e))
 
     @app.get("/api/fortune/recent", dependencies=[Depends(require_auth)])
-    def _f_recent(n: int = 8):
+    def _f_recent(n: int = 8, visitor: str = Depends(require_visitor)):
         _ensure()
         with _connect() as c:
-            rows = c.execute("SELECT id,created_at,question,method,mode,seal,verdict FROM fortune_sessions"
-                             " ORDER BY id DESC LIMIT ?", (max(1, min(n, 30)),)).fetchall()
+            if DATABASE_URL:
+                rows = c.execute("SELECT id,created_at,question,method,mode,seal,verdict FROM fortune_sessions "
+                                 "WHERE visitor_id=%s ORDER BY id DESC LIMIT %s", (visitor, max(1, min(n, 30)))).fetchall()
+            else:
+                rows = c.execute("SELECT id,created_at,question,method,mode,seal,verdict FROM fortune_sessions "
+                                 "WHERE visitor_id=? ORDER BY id DESC LIMIT ?", (visitor, max(1, min(n, 30)))).fetchall()
         return [{"id": r[0], "at": r[1], "q": r[2], "method": r[3], "mode": r[4],
                  "seal": r[5], "verdict": r[6]} for r in rows]
 
     @app.get("/api/fortune/session/{sid}", dependencies=[Depends(require_auth)])
-    def _f_one(sid: int):
+    def _f_one(sid: int, visitor: str = Depends(require_visitor)):
         _ensure()
         with _connect() as c:
-            r = c.execute("SELECT id,created_at,question,method,mode,face,seal,verdict"
-                          " FROM fortune_sessions WHERE id=?", (sid,)).fetchone()
+            if DATABASE_URL:
+                r = c.execute("SELECT id,created_at,question,method,mode,face,seal,verdict "
+                              "FROM fortune_sessions WHERE id=%s AND visitor_id=%s", (sid, visitor)).fetchone()
+            else:
+                r = c.execute("SELECT id,created_at,question,method,mode,face,seal,verdict "
+                              "FROM fortune_sessions WHERE id=? AND visitor_id=?", (sid, visitor)).fetchone()
         if not r:
             raise HTTPException(404, "no such session")
         return {"id": r[0], "at": r[1], "q": r[2], "method": r[3], "mode": r[4],
                 "face": r[5], "seal": r[6], "verdict": r[7]}
 
     @app.post("/api/fortune/verdict", dependencies=[Depends(require_auth)])
-    async def _f_verdict(req: Request):
+    async def _f_verdict(req: Request, visitor: str = Depends(require_visitor)):
         b = await req.json()
         _ensure()
         try:
@@ -231,12 +270,15 @@ def register(app, require_auth):
             raise HTTPException(400, "要 id(卦局号)")
         v = str(b.get("verdict") or "").strip()[:4000]
         with _connect() as c:
-            cur = c.execute("UPDATE fortune_sessions SET verdict=? WHERE id=?", (v, sid))
+            if DATABASE_URL:
+                cur = c.execute("UPDATE fortune_sessions SET verdict=%s WHERE id=%s AND visitor_id=%s", (v, sid, visitor))
+            else:
+                cur = c.execute("UPDATE fortune_sessions SET verdict=? WHERE id=? AND visitor_id=?", (v, sid, visitor))
             if cur.rowcount == 0:
                 raise HTTPException(404, "no such session")
         return {"ok": True, "id": sid}
     @app.post("/api/fortune/ai_verdict", dependencies=[Depends(require_auth)])
-    async def _f_ai_verdict(req: Request):
+    async def _f_ai_verdict(req: Request, visitor: str = Depends(require_visitor)):
         """根据卦局调用 DeepSeek 断卦，可自动存档"""
         import httpx
         b = await req.json()
@@ -249,7 +291,12 @@ def register(app, require_auth):
 
         _ensure()
         with _connect() as c:
-            r = c.execute("SELECT id, question, method, face, seal FROM fortune_sessions WHERE id=?", (sid,)).fetchone()
+            if DATABASE_URL:
+                r = c.execute("SELECT id, question, method, face, seal FROM fortune_sessions "
+                              "WHERE id=%s AND visitor_id=%s", (sid, visitor)).fetchone()
+            else:
+                r = c.execute("SELECT id, question, method, face, seal FROM fortune_sessions "
+                              "WHERE id=? AND visitor_id=?", (sid, visitor)).fetchone()
         if not r:
             raise HTTPException(404, "no such session")
 
@@ -325,6 +372,9 @@ def register(app, require_auth):
 
         if auto_save and verdict:
             with _connect() as c:
-                c.execute("UPDATE fortune_sessions SET verdict=? WHERE id=?", (verdict[:4000], sid))
+                if DATABASE_URL:
+                    c.execute("UPDATE fortune_sessions SET verdict=%s WHERE id=%s AND visitor_id=%s", (verdict[:4000], sid, visitor))
+                else:
+                    c.execute("UPDATE fortune_sessions SET verdict=? WHERE id=? AND visitor_id=?", (verdict[:4000], sid, visitor))
 
         return {"ok": True, "id": sid, "verdict": verdict}

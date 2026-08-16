@@ -54,10 +54,22 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `HOST` / `PORT` | `127.0.0.1` / `3900` | 监听地址与端口 |
 | `PERSONA` | `摊主` | 卦账落款的摊主名 |
 | `FORTUNE_DB` | `./data/fortune.db` | 卦账 SQLite 位置 |
+| `DATABASE_URL` | 空 | Supabase PostgreSQL 连接串；设置后卦账会持久化到云端，并优先于 `FORTUNE_DB` |
 | `SKILLS_DIR` | `./skills` | divination-skills 所在目录 |
 | `FORTUNE_TOKEN` | 空 | 设了则所有 API 要求 `Bearer` 令牌；前端在浏览器控制台执行 `localStorage.setItem('fortune_token','…')` 配对 |
 
 > ⚠️ 默认只监听本机。放公网请自行加认证层（反向代理 Basic Auth / Cloudflare Access 等），或至少设 `FORTUNE_TOKEN`。
+
+### 免费版持久化卦账（Supabase）
+
+Render 免费实例的本地文件会在休眠、重启与重新部署后清空。要保留卦账：
+
+1. 在 Supabase 新建一个免费项目。
+2. 点项目顶部 **Connect**，复制 **Session pooler** 的连接串（端口 `5432`）。Render 是 IPv4 网络，应使用 pooler，不要使用 Direct connection。
+3. 在 Render 的 Environment 新增 `DATABASE_URL`，把连接串粘贴为值（不要提交到 GitHub）。
+4. 保存并手动重新部署。程序会自动创建 `fortune_sessions` 表。
+
+每个浏览器会自动获得一个匿名访客标识；卦账只显示该浏览器创建的记录。清除浏览器网站数据或更换浏览器后，旧记录仍在数据库，但该浏览器不再能直接查看。
 
 ## 把卦交给 AI 断
 
