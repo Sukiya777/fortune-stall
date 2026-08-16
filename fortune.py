@@ -9,6 +9,7 @@
 import json
 import os
 import sqlite3
+import re
 import subprocess
 import sys
 from datetime import datetime
