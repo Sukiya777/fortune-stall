@@ -336,13 +336,26 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   </div>
 </div>
 
-<div class="gate" id="gate"><div>灯还没点着——<br>服务端设了 FORTUNE_TOKEN 鉴权。<br><span style="font-size:12px;color:var(--muted)">在浏览器控制台执行<br>localStorage.setItem('fortune_token','你的token')<br>后刷新即可。</span></div></div>
+<div class="gate" id="gate">
+  <div style="max-width:320px;margin:0 auto;text-align:center;padding:20px">
+    <div style="font-size:15px;letter-spacing:.15em;margin-bottom:18px">请输入访问密码</div>
+    <input id="gatePwd" type="password" placeholder="访问密码" style="text-align:center;margin-bottom:14px">
+    <button class="primary" style="letter-spacing:.2em" onclick="unlockGate()">进 入</button>
+    <div id="gateErr" style="color:var(--ember);font-size:12px;margin-top:12px;min-height:18px"></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 'use strict';
 /* ════════════════════ 基础 ════════════════════ */
 const TOKEN = localStorage.getItem('fortune_token') || '';  /* 服务端未设 FORTUNE_TOKEN 时无需配置 */
+function unlockGate(){
+  const pwd = ($('gatePwd')||{}).value || '';
+  if(!pwd){ if($('gateErr')) $('gateErr').textContent='请输入密码'; return; }
+  localStorage.setItem('fortune_token', pwd);
+  location.reload();
+}
 /* 不含姓名、邮箱等个人信息；仅用于把卦账隔离到当前浏览器。 */
 let VISITOR_ID = localStorage.getItem('fortune_visitor_id');
 if(!VISITOR_ID){VISITOR_ID=crypto.randomUUID();localStorage.setItem('fortune_visitor_id',VISITOR_ID);}
