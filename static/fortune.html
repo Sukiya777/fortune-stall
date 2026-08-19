@@ -350,6 +350,8 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 'use strict';
 /* ════════════════════ 基础 ════════════════════ */
 const TOKEN = localStorage.getItem('fortune_token') || '';  /* 服务端未设 FORTUNE_TOKEN 时无需配置 */
+// 页面加载时主动检查：如果没有 token，立即显示密码框
+if(!TOKEN){document.getElementById('gate').classList.add('on');}
 function unlockGate(){
   const pwd = ($('gatePwd')||{}).value || '';
   if(!pwd){ if($('gateErr')) $('gateErr').textContent='请输入密码'; return; }
