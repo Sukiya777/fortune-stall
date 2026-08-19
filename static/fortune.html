@@ -610,8 +610,8 @@ function onFace(text,extra){
     '<div class="facefold fold" id="faceFold"><div class="lbl">卦 面 全 文</div>'+
     '<div class="txt">'+esc(text)+'</div><div class="foldtip">点开 / 收起</div></div>'+
     '<div class="actrow">'+
-      '<button class="act gold" onclick="copyFace()">复制卦面</button>'+
-      '<button class="act" style="border-color:var(--gold-line);color:var(--lantern)" onclick="aiVerdictDirect('+sid+')">让Suki 断卦</button>'+
+      '<button class="act" onclick="copyFace()">复制卦面</button>'+
+      '<button class="act gold" onclick="aiVerdictDirect('+sid+')">让Suki断卦</button>'+
       '<button class="act" onclick="resetCast()">再问一事</button>'+
     '</div><div id="aiResult"></div></div>');
   box.querySelector('#faceFold').onclick=e=>{e.currentTarget.classList.toggle('fold');};
