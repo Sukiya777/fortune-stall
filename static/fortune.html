@@ -610,9 +610,10 @@ function onFace(text,extra){
     '<div class="facefold fold" id="faceFold"><div class="lbl">卦 面 全 文</div>'+
     '<div class="txt">'+esc(text)+'</div><div class="foldtip">点开 / 收起</div></div>'+
     '<div class="actrow">'+
+      '<button class="act" style="border-color:var(--gold-line);color:var(--lantern)" onclick="aiVerdictDirect('+sid+')">AI 断卦</button>'+
       '<button class="act gold" onclick="copyFace()">复制卦面 · 拿去给 AI 断</button>'+
       '<button class="act" onclick="resetCast()">再问一事</button>'+
-    '</div></div>');
+    '</div><div id="aiResult"></div></div>');
   box.querySelector('#faceFold').onclick=e=>{e.currentTarget.classList.toggle('fold');};
   $('resultHolder').innerHTML='';$('resultHolder').appendChild(box);
   box.querySelectorAll('.tc-img').forEach(im=>{
@@ -621,6 +622,20 @@ function onFace(text,extra){
   setCasting(false);
   if(prettyHTML)runFlips(box);
   box.scrollIntoView({behavior:REDUCED?'auto':'smooth',block:'nearest'});}
+async function aiVerdictDirect(sid){
+    if(!sid){toast('找不到卦局 ID');return;}
+    try{
+        const r=await api('/api/fortune/ai_verdict',{method:'POST',body:JSON.stringify({id:parseInt(sid),auto_save:true})});
+        const d=await r.json();
+        if(!r.ok)throw Error(d.detail||'AI 断卦失败');
+        const resultDiv=document.getElementById('aiResult');
+        if(resultDiv){
+            resultDiv.innerHTML='<div style="margin-top:16px;padding:16px;background:rgba(255,255,255,0.05);border-radius:8px;border-left:3px solid var(--lantern)"><div style="font-size:13px;color:var(--muted);margin-bottom:8px">AI 断卦结果</div><div style="white-space:pre-wrap;line-height:1.8">'+esc(d.verdict||'')+'</div></div>';
+            resultDiv.scrollIntoView({behavior:'smooth',block:'nearest'});
+        }
+        toast('AI 断卦完成');
+    }catch(e){toast(e.message||'AI 断卦失败');}
+}
 
 function resetCast(){lockedRoll=null;lastCast=null;
   $('qInput').value='';$('stage').innerHTML='';$('resultHolder').innerHTML='';
