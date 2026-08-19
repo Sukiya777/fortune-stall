@@ -610,8 +610,8 @@ function onFace(text,extra){
     '<div class="facefold fold" id="faceFold"><div class="lbl">卦 面 全 文</div>'+
     '<div class="txt">'+esc(text)+'</div><div class="foldtip">点开 / 收起</div></div>'+
     '<div class="actrow">'+
-      '<button class="act" style="border-color:var(--gold-line);color:var(--lantern)" onclick="aiVerdictDirect('+sid+')">让Suki 断卦</button>'+
       '<button class="act gold" onclick="copyFace()">复制卦面</button>'+
+      '<button class="act" style="border-color:var(--gold-line);color:var(--lantern)" onclick="aiVerdictDirect('+sid+')">让Suki 断卦</button>'+
       '<button class="act" onclick="resetCast()">再问一事</button>'+
     '</div><div id="aiResult"></div></div>');
   box.querySelector('#faceFold').onclick=e=>{e.currentTarget.classList.toggle('fold');};
@@ -761,9 +761,8 @@ async function openSession(id){
     let h=esc(d.face||'');
     if(d.seal)h+='<div class="sealft">落款 · '+esc(d.seal)+'</div>';
     h+='<div class="verd"><div class="vl">断 语 存 档</div>'+
-  '<textarea id="verdIn" style="margin-top:4px" placeholder="把 AI 或你自己的断语记在这里…"></textarea>'+
-  '<button class="act gold" style="display:block;width:100%;margin-top:10px" onclick="saveVerdict('+d.id+')">存 断 语</button>'+
-  '<button class="act" style="display:block;width:100%;margin-top:8px;border-color:var(--gold-line);color:var(--lantern)" onclick="aiVerdict('+d.id+')">AI 断 卦</button></div>';
+  '<textarea id="verdIn" style="margin-top:4px;min-height:200px;width:100%" placeholder="把 AI 或你自己的断语记在这里..."></textarea>'+
+  '<button class="act gold" style="display:block;width:100%;margin-top:10px" onclick="saveVerdict('+d.id+')">存 断 语</button></div>';
     $('ssBody').innerHTML=h;
     $('verdIn').value=d.verdict||'';
     $('sheetMask').classList.add('on');$('sessionSheet').classList.add('on');
@@ -778,7 +777,7 @@ async function saveVerdict(id){
     toast(v?'断语已记档':'断语已清空');loadLedger();
   }catch(e){toast(e.message);}}
    async function aiVerdict(id){
-  if(!confirm('确定调用 AI 断卦局 #'+id+' 吗？')) return;
+  if(!confirm('确定让 Suki 断卦局 #'+id+' 吗？')) return;
   toast('AI 正在断卦，请稍候…');
   try{
     const r = await api('/api/fortune/ai_verdict', {
