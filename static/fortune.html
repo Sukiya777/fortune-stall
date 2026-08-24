@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -244,6 +245,30 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   border-radius:12px;padding:10px 16px;font-size:13px;z-index:99;opacity:0;transition:.25s;pointer-events:none;max-width:82vw}
 .toast.on{opacity:1}
 
+/* ── 管理员界面 ── */
+.adminwrap{max-width:560px;margin:0 auto;padding:0 16px}
+.adminwrap h1{font:400 26px/1.3 var(--serif);letter-spacing:.08em;text-align:center;margin:10px 0 16px}
+.adminstats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+.statbox{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+.statbox .num{font:400 32px/1 var(--serif);color:var(--lantern);margin-bottom:6px}
+.statbox .label{font-size:12px;color:var(--muted);letter-spacing:.1em}
+.invitebox{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.invitebox h3{font:400 18px var(--serif);letter-spacing:.08em;margin-bottom:12px;color:var(--lantern)}
+.inviteitem{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)}
+.inviteitem:last-child{border-bottom:none}
+.inviteinfo{flex:1}
+.invitecode{font-size:15px;color:var(--paper);letter-spacing:.05em;margin-bottom:4px}
+.invitemeta{font-size:11px;color:var(--muted)}
+.inviteactions{display:flex;gap:8px}
+.inviteactions button{padding:6px 12px;border:1px solid var(--line);border-radius:8px;font-size:12px}
+.inviteactions .toggle{color:var(--lantern);border-color:var(--gold-line)}
+.inviteactions .delete{color:var(--ember)}
+.recorditem{padding:12px 0;border-bottom:1px solid var(--line)}
+.recorditem:last-child{border-bottom:none}
+.recordtime{font-size:11px;color:var(--muted);margin-bottom:4px}
+.recordquestion{font-size:13px;color:var(--paper);margin-bottom:4px}
+.recordmeta{font-size:11px;color:var(--dim)}
+
 @media (prefers-reduced-motion:reduce){
   .tc-inner{transition:none}
   .die.rolling,.tossrow.show .coin{animation:none}
@@ -284,6 +309,10 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
       <div class="eyebrow">存 档</div><h2>卦账</h2>
       <p class="desc">落过的印都在这本账上，断语也记在这。</p>
     </button>
+    <button class="stall" onclick="openAdmin()">
+      <div class="eyebrow">管理员</div><h2>后台</h2>
+      <p class="desc">查看使用记录，管理邀请码。</p>
+    </button>
   </div>
   <p class="footnote">卦面即印章 · 随机只在摊上摇，落地即锁</p>
 </div>
@@ -295,6 +324,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
     <h1 id="castTitle"></h1>
     <p class="mnote" id="castNote"></p>
     <div class="chips" id="modeChips"></div>
+    <div class="fld"><label>邀请码</label><input id="inviteCodeInput" placeholder="请输入邀请码"></div>
     <div class="fld"><label>所问何事</label><textarea id="qInput" placeholder="无事不占——先把事说清"></textarea></div>
     <div id="params"></div>
     <p class="modetip" id="modeTip"></p>
@@ -311,6 +341,27 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   <div class="ledgerwrap">
     <h1>卦账</h1>
     <div id="ledgerList"></div>
+  </div>
+</div>
+
+<!-- ════ 管理员 ════ -->
+<div class="view" id="vAdmin">
+  <div class="topbar"><button class="back" onclick="go('vStreet')">‹ 回摊面</button>
+    <button class="back" onclick="loadAdmin()">刷新 ⟳</button></div>
+  <div class="adminwrap">
+    <h1>管理员后台</h1>
+    <div class="adminstats" id="adminStats"></div>
+    <div class="invitebox">
+      <h3>邀请码管理</h3>
+      <div class="fld"><label>所属人</label><input id="newInviteOwner" placeholder="如：张三"></div>
+      <div class="fld"><label>使用次数</label><input id="newInviteLimit" type="number" placeholder="如：10"></div>
+      <button class="primary" onclick="createInvite()">生成邀请码</button>
+      <div id="inviteList" style="margin-top:16px"></div>
+    </div>
+    <div class="invitebox">
+      <h3>最近使用记录</h3>
+      <div id="recordList"></div>
+    </div>
   </div>
 </div>
 
@@ -372,6 +423,21 @@ async function api(path,opt={}){
   const r=await fetch(path,{...opt,headers:hd});
   if(r.status===401){$('gate').classList.add('on');throw Error('未登录');}
   return r;}
+async function adminApi(path,opt={}){
+  const adminToken = localStorage.getItem('admin_token') || '';
+  const hd={'Content-Type':'application/json','X-Admin-Token':adminToken,...(opt.headers||{})};
+  const r=await fetch(path,{...opt,headers:hd});
+  if(r.status===401){
+    const pwd = prompt('请输入管理员密码：');
+    if(!pwd) throw Error('未授权');
+    localStorage.setItem('admin_token', pwd);
+    hd['X-Admin-Token'] = pwd;
+    const r2=await fetch(path,{...opt,headers:hd});
+    if(r2.status===401) throw Error('管理员密码错误');
+    return r2;
+  }
+  return r;
+}
 function go(v){document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   $(v).classList.add('on');window.scrollTo(0,0);}
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -491,14 +557,16 @@ function num(id){const v=($('p_'+id)||{}).value;return v===''||v==null?null:Numb
 /* ── 出手 ── */
 async function fire(){
   if(casting)return;
+  const inviteCode = ($('inviteCodeInput')||{}).value||'';
+  if(!inviteCode){toast('请先输入邀请码');$('inviteCodeInput').focus();return;}
   const q=$('qInput').value.trim();
   if(!q){toast('无事不占——先把事说清');$('qInput').focus();return;}
   const md=METHODS[curMethod].modes.find(x=>x.id===curMode);
-  if(md.ritual==='dice'){if(lockedRoll){ritualOpen();return;}return rollDice(q);}
-  if(md.ritual==='coin'){if(lockedRoll){ritualOpen();return;}return rollCoin(q);}
-  return castDeterministic(q,md);}
+  if(md.ritual==='dice'){if(lockedRoll){ritualOpen();return;}return rollDice(q,inviteCode);}
+  if(md.ritual==='coin'){if(lockedRoll){ritualOpen();return;}return rollCoin(q,inviteCode);}
+  return castDeterministic(q,md,inviteCode);}
 
-async function castDeterministic(q,md){
+async function castDeterministic(q,md,inviteCode){
   const body={question:q,method:curMethod,mode:curMode};
   if(curMode==='lunar'){body.a=num('la');body.b=num('lb');body.hour=($('p_hour')||{}).value;
     if(body.a==null||body.b==null){toast('农历月日要填全');return;}}
@@ -516,6 +584,12 @@ async function castDeterministic(q,md){
     const d=await r.json();
     if(!r.ok)throw Error(d.detail||'起卦失败');
     onFace(d.text,null);
+    const sid=(d.text.match(/#(\d+)/)||[])[1];
+    if(sid){
+      try{
+        await api('/api/fortune/use_invite',{method:'POST',body:JSON.stringify({code:inviteCode,session_id:parseInt(sid)})});
+      }catch(e){console.warn('记录邀请码使用失败',e);}
+    }
   }catch(e){toast(e.message||'起卦失败');}
   finally{setCasting(false);}}
 
@@ -531,7 +605,7 @@ const PIP_XY={1:[[1,1]],2:[[0,0],[2,2]],3:[[0,0],[1,1],[2,2]],4:[[0,0],[0,2],[2,
   5:[[0,0],[0,2],[1,1],[2,0],[2,2]],6:[[0,0],[0,2],[1,0],[1,2],[2,0],[2,2]]};
 function dieHTML(p){if(!p)return '<div class="die q"></div>';
   return '<div class="die">'+PIP_XY[p].map(([y,x])=>'<i style="--x:'+x+';--y:'+y+'"></i>').join('')+'</div>';}
-async function rollDice(q){
+async function rollDice(q,inviteCode){
   setCasting(true,'骰 子 摇 着 …');
   $('resultHolder').innerHTML='';
   $('stage').innerHTML='<div class="dicerow">'+dieHTML()+dieHTML()+dieHTML()+'</div>';
@@ -548,6 +622,12 @@ async function rollDice(q){
       '<div class="locktag">落 地 即 锁 · 一 事 一 卦</div>';
     lockedRoll={kind:'dice',q};
     onFace(d.text,{pips:d.pips});
+    const sid=(d.text.match(/#(\d+)/)||[])[1];
+    if(sid){
+      try{
+        await api('/api/fortune/use_invite',{method:'POST',body:JSON.stringify({code:inviteCode,session_id:parseInt(sid)})});
+      }catch(e){console.warn('记录邀请码使用失败',e);}
+    }
   }catch(e){$('stage').innerHTML='';toast(e.message||'掷骰失败');}
   finally{setCasting(false);}}
 
@@ -555,7 +635,7 @@ async function rollDice(q){
 const YAO_NAME=['初','二','三','四','五','上'];
 function yaoGlyph(y){if(y===9)return '━━━<b>○ 动</b>';if(y===7)return '━━━';
   if(y===8)return '━&nbsp;━';return '━&nbsp;━<b>× 动</b>';}
-async function rollCoin(q){
+async function rollCoin(q,inviteCode){
   setCasting(true,'铜 钱 摇 着 …');
   $('resultHolder').innerHTML='';$('stage').innerHTML='';
   try{
@@ -577,6 +657,12 @@ async function rollCoin(q){
     col.insertAdjacentHTML('afterend','<div class="locktag">六 爻 已 成 · 落 地 即 锁</div>');
     lockedRoll={kind:'coin',q};
     onFace(d.text,{tosses:d.tosses});
+    const sid=(d.text.match(/#(\d+)/)||[])[1];
+    if(sid){
+      try{
+        await api('/api/fortune/use_invite',{method:'POST',body:JSON.stringify({code:inviteCode,session_id:parseInt(sid)})});
+      }catch(e){console.warn('记录邀请码使用失败',e);}
+    }
   }catch(e){toast(e.message||'摇钱失败');}
   finally{setCasting(false);}}
 
@@ -792,6 +878,69 @@ async function saveVerdict(id){
   }catch(e){
     toast(e.message || 'AI 断卦失败');
   }
+}
+
+/* ════════════════════ 管理员 ════════════════════ */
+function openAdmin(){go('vAdmin');loadAdmin();}
+async function loadAdmin(){
+  try{
+    const r=await adminApi('/api/fortune/admin/stats');
+    const d=await r.json();
+    if(!r.ok)throw Error(d.detail||'加载失败');
+    $('adminStats').innerHTML='<div class="statbox"><div class="num">'+d.today+'</div><div class="label">今日占卜</div></div>'+
+      '<div class="statbox"><div class="num">'+d.week+'</div><div class="label">本周占卜</div></div>';
+    let h='';
+    (d.records||[]).forEach(r=>{
+      h+='<div class="recorditem"><div class="recordtime">'+esc(r.time||'')+'</div>'+
+        '<div class="recordquestion">'+esc(r.question||'')+'</div>'+
+        '<div class="recordmeta">'+esc(r.method||'')+' · '+(r.owner?esc(r.owner):'无邀请码')+'</div></div>';
+    });
+    $('recordList').innerHTML=h||'<p class="emptyline">暂无记录</p>';
+    loadInvites();
+  }catch(e){toast(e.message||'加载失败');}
+}
+async function loadInvites(){
+  try{
+    const r=await adminApi('/api/fortune/admin/invites');
+    const d=await r.json();
+    if(!r.ok)throw Error(d.detail||'加载失败');
+    let h='';
+    (d.invites||[]).forEach(inv=>{
+      h+='<div class="inviteitem"><div class="inviteinfo"><div class="invitecode">'+esc(inv.code)+'</div>'+
+        '<div class="invitemeta">所属人：'+esc(inv.owner||'')+' · 已用 '+inv.used_count+'/'+inv.total_limit+' · '+(inv.active?'启用':'禁用')+'</div></div>'+
+        '<div class="inviteactions"><button class="toggle" onclick="toggleInvite('+inv.id+','+(!inv.active)+')">'+(inv.active?'禁用':'启用')+'</button>'+
+        '<button class="delete" onclick="deleteInvite('+inv.id+')">删除</button></div></div>';
+    });
+    $('inviteList').innerHTML=h||'<p class="emptyline">暂无邀请码</p>';
+  }catch(e){console.warn('加载邀请码失败',e);}
+}
+async function createInvite(){
+  const owner=($('newInviteOwner')||{}).value||'';
+  const limit=parseInt(($('newInviteLimit')||{}).value)||10;
+  if(!owner){toast('请输入所属人');return;}
+  try{
+    const r=await adminApi('/api/fortune/admin/invites',{method:'POST',body:JSON.stringify({owner,total_limit:limit})});
+    const d=await r.json();
+    if(!r.ok)throw Error(d.detail||'创建失败');
+    toast('邀请码已生成：'+d.code);
+    $('newInviteOwner').value='';$('newInviteLimit').value='';
+    loadInvites();
+  }catch(e){toast(e.message||'创建失败');}
+}
+async function toggleInvite(id,active){
+  try{
+    await adminApi('/api/fortune/admin/invites/'+id,{method:'PATCH',body:JSON.stringify({active})});
+    toast(active?'已启用':'已禁用');
+    loadInvites();
+  }catch(e){toast(e.message||'操作失败');}
+}
+async function deleteInvite(id){
+  if(!confirm('确定删除这个邀请码吗？'))return;
+  try{
+    await adminApi('/api/fortune/admin/invites/'+id,{method:'DELETE'});
+    toast('已删除');
+    loadInvites();
+  }catch(e){toast(e.message||'删除失败');}
 }
 
 /* ════════════════════ 启动 ════════════════════ */
