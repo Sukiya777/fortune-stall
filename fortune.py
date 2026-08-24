@@ -45,9 +45,13 @@ def _ensure():
                       "seal TEXT DEFAULT '', verdict TEXT DEFAULT '', author TEXT DEFAULT '', "
                       "visitor_id TEXT NOT NULL DEFAULT '')")
         
-        columns = {row[1] for row in c.execute("PRAGMA table_info(fortune_sessions)").fetchall()}
-        if "visitor_id" not in columns:
-            c.execute("ALTER TABLE fortune_sessions ADD COLUMN visitor_id TEXT NOT NULL DEFAULT ''")
+        if not DATABASE_URL:
+            columns = {row[1] for row in c.execute("PRAGMA table_info(fortune_sessions)").fetchall()}
+            if "visitor_id" not in columns:
+                c.execute("ALTER TABLE fortune_sessions ADD COLUMN visitor_id TEXT NOT NULL DEFAULT ''")
+        
+        # 创建邀请码表
+        ...
         
         # 创建邀请码表
         if DATABASE_URL:
