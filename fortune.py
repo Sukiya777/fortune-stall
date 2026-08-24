@@ -575,12 +575,12 @@ def register(app, require_auth):
             if DATABASE_URL:
                 today = c.execute("""
                     SELECT COUNT(*) FROM fortune_sessions
-                    WHERE DATE(created_at) = CURRENT_DATE
+                    WHERE created_at::date = CURRENT_DATE
                 """).fetchone()[0]
                 
                 week = c.execute("""
                     SELECT COUNT(*) FROM fortune_sessions
-                    WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+                    WHERE created_at::timestamp >= CURRENT_DATE - INTERVAL '7 days'
                 """).fetchone()[0]
                 
                 records = c.execute("""
