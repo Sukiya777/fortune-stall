@@ -51,9 +51,6 @@ def _ensure():
                 c.execute("ALTER TABLE fortune_sessions ADD COLUMN visitor_id TEXT NOT NULL DEFAULT ''")
         
         # 创建邀请码表
-        ...
-        
-        # 创建邀请码表
         if DATABASE_URL:
             c.execute("""
                 CREATE TABLE IF NOT EXISTS invite_codes (
@@ -624,3 +621,14 @@ def register(app, require_auth):
                     for r in records
                 ]
             }
+    
+    @app.post("/api/fortune/admin/clear")
+    async def _f_clear_records(_: None = Depends(require_admin)):
+        """清空所有卦象记录（管理员专用）"""
+        _ensure()
+        with _connect() as c:
+            if DATABASE_URL:
+                c.execute("DELETE FROM fortune_sessions")
+            else:
+                c.execute("DELETE FROM fortune_sessions")
+        return {"success": True, "message": "已清空所有卦象记录"}
