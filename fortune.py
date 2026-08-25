@@ -505,7 +505,7 @@ def register(app, require_auth):
     
     @app.post("/api/fortune/admin/invites")
     async def _f_create_invite(req: Request, _: None = Depends(require_admin)):
-        """创建邀请码（自动生成随机码）"""
+        """创建邀请码（支持自定义或自动生成）"""
         import random
         import string
         
@@ -513,31 +513,68 @@ def register(app, require_auth):
         owner = b.get("owner", "").strip()
         total_limit = int(b.get("total_limit", 10))
         note = b.get("note", "").strip()
+        custom_code = b.get("code", "").strip().upper()
         
         if not owner:
             raise HTTPException(400, "请输入所属人")
         
-        # 生成6位随机邀请码
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        
         _ensure()
         with _connect() as c:
+            # 如果提供了自定义邀请码
+            if custom_code:
+                # 检查是否已存在
+                if DATABASE_URL:
+                    exists = c.execute("SELECT 1 FROM invite_codes WHERE code = %s", (custom_code,)).fetchone()
+                else:
+                    exists = c.execute("SELECT 1 FROM invite_codes WHERE code = ?", (custom_code,)).fetchone()
+                
+                if exists:
+                    raise HTTPException(400, f"邀请码 {custom_code} 已存在，请换一个")
+                code = custom_code
+            else:
+                # 自动生成6位随机邀请码
+                code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                if DATABASE_URL:
+                    while c.execute("SELECT 1 FROM invite_codes WHERE code = %s", (code,)).fetchone():
+                        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                else:
+                    while c.execute("SELECT 1 FROM invite_codes WHERE code = ?", (code,)).fetchone():
+                        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            
             if DATABASE_URL:
-                while c.execute("SELECT 1 FROM invite_codes WHERE code = %s", (code,)).fetchone():
-                    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
                 c.execute("""
                     INSERT INTO invite_codes (code, owner, total_limit, note)
                     VALUES (%s, %s, %s, %s)
                 """, (code, owner, total_limit, note))
             else:
-                while c.execute("SELECT 1 FROM invite_codes WHERE code = ?", (code,)).fetchone():
-                    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
                 c.execute("""
                     INSERT INTO invite_codes (code, owner, total_limit, note)
                     VALUES (?, ?, ?, ?)
                 """, (code, owner, total_limit, note))
             
             return {"success": True, "code": code}
+    
+    @app.put("/api/fortune/admin/invites/{invite_id}")
+    async def _f_update_invite_limit(invite_id: int, req: Request, _: None = Depends(require_admin)):
+        """修改邀请码的使用次数"""
+        b = await req.json()
+        new_limit = b.get("total_limit")
+        
+        if new_limit is None:
+            raise HTTPException(400, "请提供新的使用次数")
+        
+        new_limit = int(new_limit)
+        if new_limit < 0:
+            raise HTTPException(400, "使用次数不能为负数")
+        
+        _ensure()
+        with _connect() as c:
+            if DATABASE_URL:
+                c.execute("UPDATE invite_codes SET total_limit = %s WHERE id = %s", (new_limit, invite_id))
+            else:
+                c.execute("UPDATE invite_codes SET total_limit = ? WHERE id = ?", (new_limit, invite_id))
+            
+            return {"success": True, "new_limit": new_limit}
     
     @app.delete("/api/fortune/admin/invites/{invite_id}")
     async def _f_delete_invite(invite_id: int, _: None = Depends(require_admin)):
