@@ -892,7 +892,10 @@ async function loadAdmin(){
     });
     $('recordList').innerHTML=h||'<p class="emptyline">暂无记录</p>';
     loadInvites();
-  }catch(e){toast(e.message||'加载失败');}
+  }catch(e){
+    toast(e.message||'加载失败');
+    if(e.message==='未授权'){go('vStreet');}
+  }
 }
 async function loadInvites(){
   try{
