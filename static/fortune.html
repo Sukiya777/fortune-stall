@@ -1,5 +1,6 @@
 
 
+
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -553,6 +554,20 @@ async function fire(){
   if(casting)return;
   const inviteCode = ($('inviteCodeInput')||{}).value||'';
   if(!inviteCode){toast('请先输入邀请码');$('inviteCodeInput').focus();return;}
+  
+  // 先验证邀请码是否有效且有剩余次数
+  setCasting(true,'验证邀请码中…');
+  try{
+    const r=await api('/api/fortune/verify_invite',{method:'POST',body:JSON.stringify({code:inviteCode})});
+    const d=await r.json();
+    if(!r.ok)throw Error(d.detail||'邀请码验证失败');
+    setCasting(false);
+  }catch(e){
+    setCasting(false);
+    toast(e.message||'邀请码无效或已用完');
+    return;
+  }
+  
   const q=$('qInput').value.trim();
   if(!q){toast('无事不占——先把事说清');$('qInput').focus();return;}
   const md=METHODS[curMethod].modes.find(x=>x.id===curMode);
