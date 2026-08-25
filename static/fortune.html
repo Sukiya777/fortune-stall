@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -307,7 +308,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
     </button>
     <button class="stall" onclick="openAdmin()">
       <div class="eyebrow">管理员</div><h2>后台</h2>
-      <p class="desc">查看使用记录，管理邀请码。</p>
+      <p class="desc">Suki工作台</p>
     </button>
   </div>
   <p class="footnote">卦面即印章 · 随机只在摊上摇，落地即锁</p>
@@ -349,6 +350,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
     <div class="adminstats" id="adminStats"></div>
     <div class="invitebox">
       <h3>邀请码管理</h3>
+      <div class="fld"><label>邀请码（可选，留空则自动生成）</label><input id="newInviteCode" placeholder="如：ABC123，留空自动生成"></div>
       <div class="fld"><label>所属人</label><input id="newInviteOwner" placeholder="如：张三"></div>
       <div class="fld"><label>使用次数</label><input id="newInviteLimit" type="number" placeholder="如：10"></div>
       <button class="primary" onclick="createInvite()">生成邀请码</button>
@@ -904,26 +906,41 @@ async function loadInvites(){
     if(!r.ok)throw Error(d.detail||'加载失败');
     let h='';
     (d.invites||[]).forEach(inv=>{
+      const remaining=inv.total_limit-inv.used_count;
       h+='<div class="inviteitem"><div class="inviteinfo"><div class="invitecode">'+esc(inv.code)+'</div>'+
-        '<div class="invitemeta">所属人：'+esc(inv.owner||'')+' · 已用 '+inv.used_count+'/'+inv.total_limit+' · '+(inv.active?'启用':'禁用')+'</div></div>'+
-        '<div class="inviteactions"><button class="toggle" onclick="toggleInvite('+inv.id+','+(!inv.active)+')">'+(inv.active?'禁用':'启用')+'</button>'+
+        '<div class="invitemeta">所属人：'+esc(inv.owner||'')+' · 已用 '+inv.used_count+'/'+inv.total_limit+' · 剩余 '+remaining+' · '+(inv.active?'启用':'禁用')+'</div></div>'+
+        '<div class="inviteactions">'+
+        '<button onclick="updateInviteLimit('+inv.id+','+(inv.total_limit+1)+')" style="padding:6px 10px">+</button>'+
+        '<button onclick="updateInviteLimit('+inv.id+','+(inv.total_limit-1)+')" style="padding:6px 10px">-</button>'+
+        '<button class="toggle" onclick="toggleInvite('+inv.id+','+(!inv.active)+')">'+(inv.active?'禁用':'启用')+'</button>'+
         '<button class="delete" onclick="deleteInvite('+inv.id+')">删除</button></div></div>';
     });
     $('inviteList').innerHTML=h||'<p class="emptyline">暂无邀请码</p>';
   }catch(e){console.warn('加载邀请码失败',e);}
 }
 async function createInvite(){
+  const code=($('newInviteCode')||{}).value||'';
   const owner=($('newInviteOwner')||{}).value||'';
   const limit=parseInt(($('newInviteLimit')||{}).value)||10;
   if(!owner){toast('请输入所属人');return;}
   try{
-    const r=await adminApi('/api/fortune/admin/invites',{method:'POST',body:JSON.stringify({owner,total_limit:limit})});
+    const r=await adminApi('/api/fortune/admin/invites',{method:'POST',body:JSON.stringify({code:code,owner:owner,total_limit:limit})});
     const d=await r.json();
     if(!r.ok)throw Error(d.detail||'创建失败');
     toast('邀请码已生成：'+d.code);
-    $('newInviteOwner').value='';$('newInviteLimit').value='';
+    $('newInviteCode').value='';$('newInviteOwner').value='';$('newInviteLimit').value='';
     loadInvites();
   }catch(e){toast(e.message||'创建失败');}
+}
+async function updateInviteLimit(id,newLimit){
+  if(newLimit<0){toast('次数不能为负数');return;}
+  try{
+    const r=await adminApi('/api/fortune/admin/invites/'+id,{method:'PUT',body:JSON.stringify({total_limit:newLimit})});
+    const d=await r.json();
+    if(!r.ok)throw Error(d.detail||'修改失败');
+    toast('已修改为 '+newLimit+' 次');
+    loadInvites();
+  }catch(e){toast(e.message||'修改失败');}
 }
 async function toggleInvite(id,active){
   try{
